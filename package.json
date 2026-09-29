@@ -1,0 +1,13 @@
+{
+  "name": "ai-usage-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Dashboard xem quota/chi phi toan bo tai khoan OpenAI (moi nguon), doc truc tiep tu Usage/Costs API chinh thuc bang Admin API key.",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

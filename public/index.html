@@ -594,6 +594,23 @@
     // dung ngay+khung 2 tieng do (gio dia phuong), gop theo route, tinh chi
     // phi qua rateMap (model cua tung event) - de hien detail luon, khong
     // can bam.
+    // chatbotgpt ghi model dang ten "rut gon" (vd "gpt-4o"), trong khi
+    // rateMap lay tu OpenAI cost API dung ten "snapshot" day du (vd
+    // "gpt-4o-2024-08-06") - can khop gan dung (prefix) chu khong the khop
+    // tuyet doi, neu khong rate se la 0.
+    function findRate(map, model, type) {
+      const exact = map.get(`${model}|${type}`);
+      if (exact) return exact;
+      for (const [key, rate] of map.entries()) {
+        const [kModel, kType] = key.split('|');
+        if (kType !== type) continue;
+        if (kModel === model || kModel.startsWith(`${model}-`) || model.startsWith(`${kModel}-`)) {
+          return rate;
+        }
+      }
+      return 0;
+    }
+
     function featureRowsForWindow(day, windowStart) {
       const events = chatbotgptFeatures.events || [];
       const byRoute = new Map();
@@ -602,8 +619,8 @@
         const eDay = `${utcDate.getFullYear()}-${String(utcDate.getMonth() + 1).padStart(2, '0')}-${String(utcDate.getDate()).padStart(2, '0')}`;
         const eWindow = Math.floor(utcDate.getHours() / 2) * 2;
         if (eDay !== day || eWindow !== windowStart) continue;
-        const rateInput = rateMap.get(`${e.model}|input`) || 0;
-        const rateOutput = rateMap.get(`${e.model}|output`) || 0;
+        const rateInput = findRate(rateMap, e.model, 'input');
+        const rateOutput = findRate(rateMap, e.model, 'output');
         const cost = (e.prompt_tokens || 0) * rateInput + (e.completion_tokens || 0) * rateOutput;
         const cur = byRoute.get(e.route) || { route: e.route, request_count: 0, prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, cost: 0 };
         cur.request_count += 1;

@@ -136,14 +136,6 @@
     <div class="cards" id="summaryCards"></div>
 
     <section>
-      <h2>Chi phí theo hạng mục (line item)</h2>
-      <table>
-        <thead><tr><th>Hạng mục</th><th>Chi phí (USD)</th></tr></thead>
-        <tbody id="costTableBody"></tbody>
-      </table>
-    </section>
-
-    <section>
       <h2>Tổng theo model</h2>
       <table>
         <thead>
@@ -412,32 +404,6 @@
       return rateMap;
     }
 
-    function renderCostTable(tbodyId, rows, hasError) {
-      const body = document.getElementById(tbodyId);
-      if (hasError) {
-        body.innerHTML = `<tr><td colspan="2" class="muted">${escapeHtml(hasError)}</td></tr>`;
-        return;
-      }
-      if (!rows.length) {
-        body.innerHTML = `<tr><td colspan="2" class="muted">Chưa có dữ liệu chi phí trong khoảng này.</td></tr>`;
-        return;
-      }
-      const byLineItem = new Map();
-      for (const r of rows) {
-        const key = r.line_item || '(khác)';
-        const cur = byLineItem.get(key) || { line_item: key, amount: 0 };
-        cur.amount += r.amount?.value || 0;
-        byLineItem.set(key, cur);
-      }
-      const lineItemRows = [...byLineItem.values()].sort((a, b) => b.amount - a.amount);
-      body.innerHTML = lineItemRows.map((r) => `
-        <tr>
-          <td>${escapeHtml(r.line_item)}</td>
-          <td>${fmtUsd(r.amount)}</td>
-        </tr>
-      `).join('');
-    }
-
     function renderModelTable(tbodyId, rows, rateMapForCost) {
       const body = document.getElementById(tbodyId);
       const byModelLocal = new Map();
@@ -487,7 +453,6 @@
       }).join('') : `<tr><td colspan="8" class="muted">Chưa có dữ liệu.</td></tr>`;
     }
 
-    renderCostTable('costTableBody', costRows, costsError);
     const rateMap = buildRateMap(costRows, costsError);
     const rateMap30 = buildRateMap(costs30Rows, costs30Error);
     renderModelTable('modelTableBody', usageRows, rateMap);

@@ -424,7 +424,7 @@
     const note = document.getElementById('chatbotgptFeatureNote');
     if (!chatbotgpt || chatbotgpt.ok === false) {
       note.textContent = chatbotgpt && chatbotgpt.error ? `Chưa lấy được chi tiết chatbotgpt theo tính năng: ${chatbotgpt.error}` : '';
-      return { dayRows: [], rows30: [] };
+      return { dayRows: [], rows30: [], events: [] };
     }
     note.textContent = '';
 
@@ -445,7 +445,7 @@
       byFeature.set(e.route, cur);
     }
 
-    return { dayRows: [...byFeature.values()], rows30: chatbotgpt.by_route || [] };
+    return { dayRows: [...byFeature.values()], rows30: chatbotgpt.by_route || [], events };
   }
 
   function render(usageRows, costRows, costsError, usage30Rows = [], costs30Rows = [], costs30Error, chatbotgpt) {
@@ -599,19 +599,77 @@
       byDayWindow.set(key, wCur);
     }
 
+    // Voi tung khung gio nguon la "chatbotgpt", loc events chatbotgpt roi vao
+    // dung ngay+khung 2 tieng do (gio dia phuong), gop theo route, tinh chi
+    // phi qua rateMap (model cua tung event) - de hien detail luon, khong
+    // can bam.
+    function featureRowsForWindow(day, windowStart) {
+      const events = chatbotgptFeatures.events || [];
+      const byRoute = new Map();
+      for (const e of events) {
+        const utcDate = new Date(e.created_at.replace(' ', 'T') + 'Z');
+        const eDay = `${utcDate.getFullYear()}-${String(utcDate.getMonth() + 1).padStart(2, '0')}-${String(utcDate.getDate()).padStart(2, '0')}`;
+        const eWindow = Math.floor(utcDate.getHours() / 2) * 2;
+        if (eDay !== day || eWindow !== windowStart) continue;
+        const rateInput = rateMap.get(`${e.model}|input`) || 0;
+        const rateOutput = rateMap.get(`${e.model}|output`) || 0;
+        const cost = (e.prompt_tokens || 0) * rateInput + (e.completion_tokens || 0) * rateOutput;
+        const cur = byRoute.get(e.route) || { route: e.route, request_count: 0, prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, cost: 0 };
+        cur.request_count += 1;
+        cur.prompt_tokens += e.prompt_tokens || 0;
+        cur.completion_tokens += e.completion_tokens || 0;
+        cur.total_tokens += e.total_tokens || 0;
+        cur.cost += cost;
+        byRoute.set(e.route, cur);
+      }
+      return [...byRoute.values()];
+    }
+
+    function renderFeatureSubtableWithCost(rows) {
+      if (!rows.length) return `<div class="muted" style="font-size:12px;">Chưa có dữ liệu.</div>`;
+      const sorted = [...rows].sort((a, b) => (b.total_tokens || 0) - (a.total_tokens || 0));
+      return `
+        <table>
+          <thead><tr><th>Tính năng</th><th>Requests</th><th>Prompt</th><th>Completion</th><th>Tổng tokens</th><th>Chi phí</th></tr></thead>
+          <tbody>
+            ${sorted.map((r) => `
+              <tr>
+                <td class="mono">${escapeHtml(routeLabel(r.route))}</td>
+                <td>${fmt(r.request_count)}</td>
+                <td>${fmt(r.prompt_tokens)}</td>
+                <td>${fmt(r.completion_tokens)}</td>
+                <td>${fmt(r.total_tokens)}</td>
+                <td>${fmtUsdVnd(r.cost)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
     const dayWindowRows = [...byDayWindow.values()]
       .filter((v) => v.requests > 0 || v.tokens > 0)
       .sort((a, b) => b.day.localeCompare(a.day) || b.windowStart - a.windowStart || a.source.localeCompare(b.source));
-    document.getElementById('dayTableBody').innerHTML = dayWindowRows.length ? dayWindowRows.map((v) => `
-      <tr>
-        <td>${v.day}</td>
-        <td class="mono">${v.windowLabel}</td>
-        <td>${escapeHtml(v.source)}</td>
-        <td>${fmt(v.requests)}</td>
-        <td>${fmt(v.tokens)}</td>
-        <td>${fmtUsdVnd(v.cost)}</td>
-      </tr>
-    `).join('') : `<tr><td colspan="6" class="muted">Chưa có dữ liệu.</td></tr>`;
+    document.getElementById('dayTableBody').innerHTML = dayWindowRows.length ? dayWindowRows.map((v) => {
+      const isChatbotgpt = v.source === 'chatbotgpt';
+      const featureRows = isChatbotgpt ? featureRowsForWindow(v.day, v.windowStart) : [];
+      const mainRow = `
+        <tr>
+          <td>${v.day}</td>
+          <td class="mono">${v.windowLabel}</td>
+          <td>${escapeHtml(v.source)}</td>
+          <td>${fmt(v.requests)}</td>
+          <td>${fmt(v.tokens)}</td>
+          <td>${fmtUsdVnd(v.cost)}</td>
+        </tr>
+      `;
+      const subRow = isChatbotgpt ? `
+        <tr class="subfeature-row">
+          <td colspan="6"><div class="subfeature-wrap">${renderFeatureSubtableWithCost(featureRows)}</div></td>
+        </tr>
+      ` : '';
+      return mainRow + subRow;
+    }).join('') : `<tr><td colspan="6" class="muted">Chưa có dữ liệu.</td></tr>`;
   }
 
   refreshBtn.addEventListener('click', load);

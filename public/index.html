@@ -96,6 +96,16 @@
   .drp-footer button {
     background: none; border: none; font-size: 13px; cursor: pointer; color: var(--accent2);
   }
+
+  .expand-toggle {
+    background: none; border: 1px solid var(--border); color: var(--accent2);
+    border-radius: 6px; padding: 1px 7px; font-size: 11px; cursor: pointer; margin-left: 8px;
+  }
+  .expand-toggle:hover { background: var(--panel2); }
+  .subfeature-row td { padding: 0; background: var(--panel2); }
+  .subfeature-wrap { padding: 10px 14px 14px 34px; }
+  .subfeature-wrap table { background: transparent; }
+  .subfeature-wrap th, .subfeature-wrap td { font-size: 12px; padding: 6px 10px; }
 </style>
 </head>
 <body>
@@ -157,22 +167,7 @@
       </table>
     </section>
 
-    <section id="chatbotgptFeatureSection" style="display:none;">
-      <h2>Chi tiết "chatbotgpt" theo tính năng</h2>
-      <table>
-        <thead><tr><th>Tính năng</th><th>Requests</th><th>Prompt tokens</th><th>Completion tokens</th><th>Tổng tokens</th><th>Tỷ trọng</th></tr></thead>
-        <tbody id="chatbotgptFeatureBody"></tbody>
-      </table>
-    </section>
-
-    <section id="chatbotgptFeatureSection30" style="display:none;">
-      <h2>Chi tiết "chatbotgpt" theo tính năng — 30 ngày qua</h2>
-      <table>
-        <thead><tr><th>Tính năng</th><th>Requests</th><th>Prompt tokens</th><th>Completion tokens</th><th>Tổng tokens</th><th>Tỷ trọng</th></tr></thead>
-        <tbody id="chatbotgptFeatureBody30"></tbody>
-      </table>
-    </section>
-    <div id="chatbotgptFeatureNote" class="muted" style="font-size:12px;margin:-16px 0 28px;"></div>
+    <div id="chatbotgptFeatureNote" class="muted" style="font-size:12px;"></div>
 
     <section>
       <h2>Theo ngày + khung giờ (2 tiếng), theo nguồn</h2>
@@ -390,53 +385,48 @@
     }
   }
 
-  function renderChatbotgptFeatures(chatbotgpt) {
-    const section = document.getElementById('chatbotgptFeatureSection');
-    const section30 = document.getElementById('chatbotgptFeatureSection30');
-    const note = document.getElementById('chatbotgptFeatureNote');
+  function renderFeatureSubtable(rows) {
+    if (!rows.length) return `<div class="muted" style="font-size:12px;">Chưa có dữ liệu.</div>`;
+    const total = rows.reduce((s, r) => s + (r.total_tokens || 0), 0);
+    const max = Math.max(1, ...rows.map((r) => r.total_tokens || 0));
+    const sorted = [...rows].sort((a, b) => (b.total_tokens || 0) - (a.total_tokens || 0));
+    return `
+      <table>
+        <thead><tr><th>Tính năng</th><th>Requests</th><th>Prompt</th><th>Completion</th><th>Tổng tokens</th><th>Tỷ trọng</th></tr></thead>
+        <tbody>
+          ${sorted.map((r) => {
+            const pct = total ? (r.total_tokens / total * 100) : 0;
+            const barPct = (r.total_tokens || 0) / max * 100;
+            return `
+              <tr>
+                <td class="mono">${escapeHtml(routeLabel(r.route))}</td>
+                <td>${fmt(r.request_count)}</td>
+                <td>${fmt(r.prompt_tokens)}</td>
+                <td>${fmt(r.completion_tokens)}</td>
+                <td>${fmt(r.total_tokens)}</td>
+                <td>
+                  <div class="bar-wrap">
+                    <div class="bar-track"><div class="bar-fill" style="width:${barPct}%"></div></div>
+                    <span class="muted" style="font-size:12px;min-width:42px;">${pct.toFixed(1)}%</span>
+                  </div>
+                </td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    `;
+  }
 
+  // Tra ve { dayRows, rows30, error } - khong tu render, de renderModelTable
+  // gan vao dung dong "chatbotgpt" lam dong con.
+  function computeChatbotgptFeatures(chatbotgpt) {
+    const note = document.getElementById('chatbotgptFeatureNote');
     if (!chatbotgpt || chatbotgpt.ok === false) {
-      section.style.display = 'none';
-      section30.style.display = 'none';
       note.textContent = chatbotgpt && chatbotgpt.error ? `Chưa lấy được chi tiết chatbotgpt theo tính năng: ${chatbotgpt.error}` : '';
-      return;
+      return { dayRows: [], rows30: [] };
     }
     note.textContent = '';
-    section.style.display = 'block';
-    section30.style.display = 'block';
-
-    function renderFeatureTable(tbodyId, rows) {
-      const body = document.getElementById(tbodyId);
-      if (!rows.length) {
-        body.innerHTML = `<tr><td colspan="6" class="muted">Chưa có dữ liệu.</td></tr>`;
-        return;
-      }
-      const total = rows.reduce((s, r) => s + (r.total_tokens || 0), 0);
-      const max = Math.max(1, ...rows.map((r) => r.total_tokens || 0));
-      const sorted = [...rows].sort((a, b) => (b.total_tokens || 0) - (a.total_tokens || 0));
-      body.innerHTML = sorted.map((r) => {
-        const pct = total ? (r.total_tokens / total * 100) : 0;
-        const barPct = (r.total_tokens || 0) / max * 100;
-        return `
-          <tr>
-            <td class="mono">${escapeHtml(routeLabel(r.route))}</td>
-            <td>${fmt(r.request_count)}</td>
-            <td>${fmt(r.prompt_tokens)}</td>
-            <td>${fmt(r.completion_tokens)}</td>
-            <td>${fmt(r.total_tokens)}</td>
-            <td>
-              <div class="bar-wrap">
-                <div class="bar-track"><div class="bar-fill" style="width:${barPct}%"></div></div>
-                <span class="muted" style="font-size:12px;min-width:42px;">${pct.toFixed(1)}%</span>
-              </div>
-            </td>
-          </tr>
-        `;
-      }).join('');
-    }
-
-    // 30 ngay: dung thang by_route chatbotgpt da tong hop san.
-    renderFeatureTable('chatbotgptFeatureBody30', chatbotgpt.by_route || []);
 
     // Ngay da chon: loc tu "events" (log tung request, created_at la UTC
     // dang "YYYY-MM-DD HH:MM:SS") theo dung ngay dia phuong nguoi dung dang
@@ -454,11 +444,12 @@
       cur.total_tokens += e.total_tokens || 0;
       byFeature.set(e.route, cur);
     }
-    renderFeatureTable('chatbotgptFeatureBody', [...byFeature.values()]);
+
+    return { dayRows: [...byFeature.values()], rows30: chatbotgpt.by_route || [] };
   }
 
   function render(usageRows, costRows, costsError, usage30Rows = [], costs30Rows = [], costs30Error, chatbotgpt) {
-    renderChatbotgptFeatures(chatbotgpt);
+    const chatbotgptFeatures = computeChatbotgptFeatures(chatbotgpt);
     contentEl.style.display = 'block';
     lastUpdatedEl.textContent = 'Cập nhật lúc ' + new Date().toLocaleTimeString('vi-VN', { hour12: false });
 
@@ -506,7 +497,7 @@
       return rateMap;
     }
 
-    function renderModelTable(tbodyId, rows, rateMapForCost) {
+    function renderModelTable(tbodyId, rows, rateMapForCost, featureRows) {
       const body = document.getElementById(tbodyId);
       const byModelLocal = new Map();
       for (const r of rows) {
@@ -531,14 +522,20 @@
       const modelRowsLocal = [...byModelLocal.entries()].map(([model, v]) => ({ model, ...v, total: v.input + v.output }))
         .sort((a, b) => b.total - a.total);
       const maxTokensLocal = Math.max(1, ...modelRowsLocal.map((r) => r.total));
-      body.innerHTML = modelRowsLocal.length ? modelRowsLocal.map((r) => {
+      let featureAttached = false;
+      body.innerHTML = modelRowsLocal.length ? modelRowsLocal.map((r, idx) => {
         const pct = localTotalTokens ? (r.total / localTotalTokens * 100) : 0;
         const barPct = r.total / maxTokensLocal * 100;
         const sourceLabel = [...r.keyIds].map(keyLabel).join(', ') || '(không rõ)';
-        return `
+        const isChatbotgpt = [...r.keyIds].some((id) => keyLabel(id) === 'chatbotgpt');
+        const attachFeatures = isChatbotgpt && featureRows && featureRows.length && !featureAttached;
+        if (attachFeatures) featureAttached = true;
+        const toggleId = `${tbodyId}-feat-${idx}`;
+
+        const row = `
           <tr>
             <td class="mono">${escapeHtml(r.model)}${MODEL_NOTES[r.model] ? `<div class="muted" style="font-size:11px;margin-top:3px;">${escapeHtml(MODEL_NOTES[r.model])}</div>` : ''}</td>
-            <td>${escapeHtml(sourceLabel)}</td>
+            <td>${escapeHtml(sourceLabel)}${attachFeatures ? `<button type="button" class="expand-toggle" data-toggle="${toggleId}">▸ chi tiết</button>` : ''}</td>
             <td>${fmt(r.requests)}</td>
             <td>${fmt(r.input)}</td>
             <td>${fmt(r.output)}</td>
@@ -552,13 +549,28 @@
             </td>
           </tr>
         `;
+        const subRow = attachFeatures ? `
+          <tr class="subfeature-row" id="${toggleId}" style="display:none;">
+            <td colspan="8"><div class="subfeature-wrap">${renderFeatureSubtable(featureRows)}</div></td>
+          </tr>
+        ` : '';
+        return row + subRow;
       }).join('') : `<tr><td colspan="8" class="muted">Chưa có dữ liệu.</td></tr>`;
+
+      body.querySelectorAll('[data-toggle]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const target = document.getElementById(btn.dataset.toggle);
+          const open = target.style.display !== 'none';
+          target.style.display = open ? 'none' : 'table-row';
+          btn.textContent = (open ? '▸' : '▾') + ' chi tiết';
+        });
+      });
     }
 
     const rateMap = buildRateMap(costRows, costsError);
     const rateMap30 = buildRateMap(costs30Rows, costs30Error);
-    renderModelTable('modelTableBody', usageRows, rateMap);
-    renderModelTable('modelTableBody30', usage30Rows, rateMap30);
+    renderModelTable('modelTableBody', usageRows, rateMap, chatbotgptFeatures.dayRows);
+    renderModelTable('modelTableBody30', usage30Rows, rateMap30, chatbotgptFeatures.rows30);
 
     const byDayWindow = new Map();
     for (const r of usageRows) {

@@ -134,6 +134,9 @@
   <div id="content" style="display:none;">
     <div class="cards" id="summaryCards"></div>
 
+    <h2 style="margin-top:-8px;">— 30 ngày qua</h2>
+    <div class="cards" id="summaryCards30"></div>
+
     <section>
       <h2>Tổng theo model</h2>
       <table>
@@ -364,19 +367,24 @@
     contentEl.style.display = 'block';
     lastUpdatedEl.textContent = 'Cập nhật lúc ' + new Date().toLocaleTimeString('vi-VN', { hour12: false });
 
-    const totalRequests = usageRows.reduce((s, r) => s + (r.num_model_requests || 0), 0);
-    const totalInput = usageRows.reduce((s, r) => s + (r.input_tokens || 0), 0);
-    const totalOutput = usageRows.reduce((s, r) => s + (r.output_tokens || 0), 0);
-    const totalTokens = totalInput + totalOutput;
-    const totalCost = costRows.reduce((s, r) => s + (r.amount?.value || 0), 0);
+    function renderSummaryCards(elId, rows, costRowsForTotal) {
+      const requests = rows.reduce((s, r) => s + (r.num_model_requests || 0), 0);
+      const input = rows.reduce((s, r) => s + (r.input_tokens || 0), 0);
+      const output = rows.reduce((s, r) => s + (r.output_tokens || 0), 0);
+      const tokens = input + output;
+      const cost = costRowsForTotal.reduce((s, r) => s + (r.amount?.value || 0), 0);
+      document.getElementById(elId).innerHTML = `
+        <div class="card"><div class="label">Tổng chi phí</div><div class="value">${fmtUsd(cost)}</div></div>
+        <div class="card"><div class="label">Tổng requests</div><div class="value">${fmt(requests)}</div></div>
+        <div class="card"><div class="label">Input tokens</div><div class="value">${fmt(input)}</div></div>
+        <div class="card"><div class="label">Output tokens</div><div class="value">${fmt(output)}</div></div>
+        <div class="card"><div class="label">Tổng tokens</div><div class="value">${fmt(tokens)}</div></div>
+      `;
+      return { requests, input, output, tokens, cost };
+    }
 
-    document.getElementById('summaryCards').innerHTML = `
-      <div class="card"><div class="label">Tổng chi phí</div><div class="value">${fmtUsd(totalCost)}</div></div>
-      <div class="card"><div class="label">Tổng requests</div><div class="value">${fmt(totalRequests)}</div></div>
-      <div class="card"><div class="label">Input tokens</div><div class="value">${fmt(totalInput)}</div></div>
-      <div class="card"><div class="label">Output tokens</div><div class="value">${fmt(totalOutput)}</div></div>
-      <div class="card"><div class="label">Tổng tokens</div><div class="value">${fmt(totalTokens)}</div></div>
-    `;
+    renderSummaryCards('summaryCards', usageRows, costRows);
+    renderSummaryCards('summaryCards30', usage30Rows, costs30Rows);
 
     // rateMap: uoc tinh $/token cho tung (model, loai) tu chinh du lieu chi
     // phi that OpenAI tra ve (amount / quantity) - dung de suy ra chi phi

@@ -150,18 +150,10 @@
     </section>
 
     <section>
-      <h2>Chi phí theo hạng mục (line item) — 30 ngày qua</h2>
-      <table>
-        <thead><tr><th>Hạng mục</th><th>Chi phí (USD)</th></tr></thead>
-        <tbody id="costTableBody30"></tbody>
-      </table>
-    </section>
-
-    <section>
       <h2>Tổng theo model</h2>
       <table>
         <thead>
-          <tr><th>Model</th><th>Nguồn</th><th>Requests</th><th>Input tokens</th><th>Output tokens</th><th>Tổng tokens</th><th>Tỷ trọng</th></tr>
+          <tr><th>Model</th><th>Nguồn</th><th>Requests</th><th>Input tokens</th><th>Output tokens</th><th>Tổng tokens</th><th>Chi phí</th><th>Tỷ trọng</th></tr>
         </thead>
         <tbody id="modelTableBody"></tbody>
       </table>
@@ -171,7 +163,7 @@
       <h2>Tổng theo model — 30 ngày qua</h2>
       <table>
         <thead>
-          <tr><th>Model</th><th>Nguồn</th><th>Requests</th><th>Input tokens</th><th>Output tokens</th><th>Tổng tokens</th><th>Tỷ trọng</th></tr>
+          <tr><th>Model</th><th>Nguồn</th><th>Requests</th><th>Input tokens</th><th>Output tokens</th><th>Tổng tokens</th><th>Chi phí</th><th>Tỷ trọng</th></tr>
         </thead>
         <tbody id="modelTableBody30"></tbody>
       </table>
@@ -387,7 +379,7 @@
     }
   }
 
-  function render(usageRows, costRows, costsError, usage30Rows, costs30Rows, costs30Error) {
+  function render(usageRows, costRows, costsError, usage30Rows = [], costs30Rows = [], costs30Error) {
     contentEl.style.display = 'block';
     lastUpdatedEl.textContent = 'Cập nhật lúc ' + new Date().toLocaleTimeString('vi-VN', { hour12: false });
 
@@ -456,16 +448,25 @@
       `).join('');
     }
 
-    function renderModelTable(tbodyId, rows) {
+    function renderModelTable(tbodyId, rows, rateMapForCost) {
       const body = document.getElementById(tbodyId);
       const byModelLocal = new Map();
       for (const r of rows) {
         const model = r.model || '(không rõ)';
-        const mCur = byModelLocal.get(model) || { requests: 0, input: 0, output: 0, keyIds: new Set() };
+        const mCur = byModelLocal.get(model) || { requests: 0, input: 0, output: 0, cost: 0, keyIds: new Set() };
         mCur.requests += r.num_model_requests || 0;
         mCur.input += r.input_tokens || 0;
         mCur.output += r.output_tokens || 0;
         if (r.api_key_id) mCur.keyIds.add(r.api_key_id);
+
+        const cachedTokens = r.input_cached_tokens || 0;
+        const uncachedTokens = r.input_uncached_tokens ?? Math.max(0, (r.input_tokens || 0) - cachedTokens);
+        const outputTokens = r.output_tokens || 0;
+        const rateInput = rateMapForCost.get(`${model}|input`) || 0;
+        const rateCachedInput = rateMapForCost.get(`${model}|cached_input`) ?? rateInput;
+        const rateOutput = rateMapForCost.get(`${model}|output`) || 0;
+        mCur.cost += uncachedTokens * rateInput + cachedTokens * rateCachedInput + outputTokens * rateOutput;
+
         byModelLocal.set(model, mCur);
       }
       const localTotalTokens = [...byModelLocal.values()].reduce((s, v) => s + v.input + v.output, 0);
@@ -484,6 +485,7 @@
             <td>${fmt(r.input)}</td>
             <td>${fmt(r.output)}</td>
             <td>${fmt(r.total)}</td>
+            <td>${fmtUsdVnd(r.cost)}</td>
             <td>
               <div class="bar-wrap">
                 <div class="bar-track"><div class="bar-fill" style="width:${barPct}%"></div></div>
@@ -492,15 +494,15 @@
             </td>
           </tr>
         `;
-      }).join('') : `<tr><td colspan="7" class="muted">Chưa có dữ liệu.</td></tr>`;
+      }).join('') : `<tr><td colspan="8" class="muted">Chưa có dữ liệu.</td></tr>`;
     }
 
     renderCostTable('costTableBody', costRows, costsError);
-    renderModelTable('modelTableBody', usageRows);
-    if (usage30Rows) renderModelTable('modelTableBody30', usage30Rows);
-    if (costs30Rows) renderCostTable('costTableBody30', costs30Rows, costs30Error);
-
     const rateMap = buildRateMap(costRows, costsError);
+    const rateMap30 = buildRateMap(costs30Rows, costs30Error);
+    renderModelTable('modelTableBody', usageRows, rateMap);
+    renderModelTable('modelTableBody30', usage30Rows, rateMap30);
+
     const byDayWindow = new Map();
     for (const r of usageRows) {
       const model = r.model || '(không rõ)';

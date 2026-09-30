@@ -535,7 +535,7 @@
         const row = `
           <tr>
             <td class="mono">${escapeHtml(r.model)}${MODEL_NOTES[r.model] ? `<div class="muted" style="font-size:11px;margin-top:3px;">${escapeHtml(MODEL_NOTES[r.model])}</div>` : ''}</td>
-            <td>${escapeHtml(sourceLabel)}${attachFeatures ? `<button type="button" class="expand-toggle" data-toggle="${toggleId}">▸ chi tiết</button>` : ''}</td>
+            <td>${escapeHtml(sourceLabel)}</td>
             <td>${fmt(r.requests)}</td>
             <td>${fmt(r.input)}</td>
             <td>${fmt(r.output)}</td>
@@ -550,21 +550,12 @@
           </tr>
         `;
         const subRow = attachFeatures ? `
-          <tr class="subfeature-row" id="${toggleId}" style="display:none;">
+          <tr class="subfeature-row" id="${toggleId}">
             <td colspan="8"><div class="subfeature-wrap">${renderFeatureSubtable(featureRows)}</div></td>
           </tr>
         ` : '';
         return row + subRow;
       }).join('') : `<tr><td colspan="8" class="muted">Chưa có dữ liệu.</td></tr>`;
-
-      body.querySelectorAll('[data-toggle]').forEach((btn) => {
-        btn.addEventListener('click', () => {
-          const target = document.getElementById(btn.dataset.toggle);
-          const open = target.style.display !== 'none';
-          target.style.display = open ? 'none' : 'table-row';
-          btn.textContent = (open ? '▸' : '▾') + ' chi tiết';
-        });
-      });
     }
 
     const rateMap = buildRateMap(costRows, costsError);
@@ -663,7 +654,7 @@
           <td>${fmtUsdVnd(v.cost)}</td>
         </tr>
       `;
-      const subRow = isChatbotgpt ? `
+      const subRow = (isChatbotgpt && featureRows.length) ? `
         <tr class="subfeature-row">
           <td colspan="6"><div class="subfeature-wrap">${renderFeatureSubtableWithCost(featureRows)}</div></td>
         </tr>

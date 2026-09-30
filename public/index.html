@@ -205,6 +205,15 @@
     'gpt-4o-mini-2024-07-18': 'Dùng để nhận diện câu hỏi (phân loại nội bộ)',
   };
 
+  // Doi ten hien thi cho tung "route" (tinh nang) tra ve tu chatbotgpt - chi
+  // sua ten hien thi o UI, khong dong den du lieu/code chatbotgpt.
+  const ROUTE_LABELS = {
+    'api/ai/chat': 'Chat AI',
+  };
+  function routeLabel(route) {
+    return ROUTE_LABELS[route] || route || '(không rõ)';
+  }
+
   function fmt(n) {
     return Number(n || 0).toLocaleString('vi-VN');
   }
@@ -410,7 +419,7 @@
         const barPct = (r.total_tokens || 0) / max * 100;
         return `
           <tr>
-            <td class="mono">${escapeHtml(r.route || '(không rõ)')}</td>
+            <td class="mono">${escapeHtml(routeLabel(r.route))}</td>
             <td>${fmt(r.request_count)}</td>
             <td>${fmt(r.prompt_tokens)}</td>
             <td>${fmt(r.completion_tokens)}</td>

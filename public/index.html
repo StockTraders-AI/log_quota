@@ -150,12 +150,30 @@
     </section>
 
     <section>
+      <h2>Chi phí theo hạng mục (line item) — 30 ngày qua</h2>
+      <table>
+        <thead><tr><th>Hạng mục</th><th>Chi phí (USD)</th></tr></thead>
+        <tbody id="costTableBody30"></tbody>
+      </table>
+    </section>
+
+    <section>
       <h2>Tổng theo model</h2>
       <table>
         <thead>
           <tr><th>Model</th><th>Nguồn</th><th>Requests</th><th>Input tokens</th><th>Output tokens</th><th>Tổng tokens</th><th>Tỷ trọng</th></tr>
         </thead>
         <tbody id="modelTableBody"></tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Tổng theo model — 30 ngày qua</h2>
+      <table>
+        <thead>
+          <tr><th>Model</th><th>Nguồn</th><th>Requests</th><th>Input tokens</th><th>Output tokens</th><th>Tổng tokens</th><th>Tỷ trọng</th></tr>
+        </thead>
+        <tbody id="modelTableBody30"></tbody>
       </table>
     </section>
 
@@ -354,11 +372,13 @@
 
     const query = buildRangeQuery();
     try {
-      const [usage, costs] = await Promise.all([
+      const [usage, costs, usage30, costs30] = await Promise.all([
         fetchJson(`/api/usage/completions?${query}`),
         fetchJson(`/api/usage/costs?${query}`).catch((e) => ({ rows: [], _error: e.message })),
+        fetchJson(`/api/usage/completions?days=30`).catch(() => ({ rows: [] })),
+        fetchJson(`/api/usage/costs?days=30`).catch((e) => ({ rows: [], _error: e.message })),
       ]);
-      render(usage.rows || [], costs.rows || [], costs._error);
+      render(usage.rows || [], costs.rows || [], costs._error, usage30.rows || [], costs30.rows || [], costs30._error);
     } catch (err) {
       errorEl.textContent = err.message || String(err);
       errorEl.style.display = 'block';
@@ -367,7 +387,7 @@
     }
   }
 
-  function render(usageRows, costRows, costsError) {
+  function render(usageRows, costRows, costsError, usage30Rows, costs30Rows, costs30Error) {
     contentEl.style.display = 'block';
     lastUpdatedEl.textContent = 'Cập nhật lúc ' + new Date().toLocaleTimeString('vi-VN', { hour12: false });
 
@@ -385,14 +405,14 @@
       <div class="card"><div class="label">Tổng tokens</div><div class="value">${fmt(totalTokens)}</div></div>
     `;
 
-    const costBody = document.getElementById('costTableBody');
     // rateMap: uoc tinh $/token cho tung (model, loai) tu chinh du lieu chi
     // phi that OpenAI tra ve (amount / quantity) - dung de suy ra chi phi
     // cho tung dong theo gio (OpenAI khong ho tro costs API theo gio).
-    const rateMap = new Map();
-    if (!costsError && costRows.length) {
+    function buildRateMap(rows, hasError) {
+      const rateMap = new Map();
+      if (hasError || !rows.length) return rateMap;
       const rateAccum = new Map();
-      for (const r of costRows) {
+      for (const r of rows) {
         const lineItem = r.line_item || '';
         const match = lineItem.match(/^(.*), (input|output|cached input)$/);
         if (!match) continue;
@@ -407,22 +427,28 @@
       for (const [key, v] of rateAccum.entries()) {
         if (v.quantity > 0) rateMap.set(key, v.amount / v.quantity);
       }
+      return rateMap;
     }
 
-    if (costsError) {
-      costBody.innerHTML = `<tr><td colspan="2" class="muted">${escapeHtml(costsError)}</td></tr>`;
-    } else if (!costRows.length) {
-      costBody.innerHTML = `<tr><td colspan="2" class="muted">Chưa có dữ liệu chi phí trong khoảng này.</td></tr>`;
-    } else {
+    function renderCostTable(tbodyId, rows, hasError) {
+      const body = document.getElementById(tbodyId);
+      if (hasError) {
+        body.innerHTML = `<tr><td colspan="2" class="muted">${escapeHtml(hasError)}</td></tr>`;
+        return;
+      }
+      if (!rows.length) {
+        body.innerHTML = `<tr><td colspan="2" class="muted">Chưa có dữ liệu chi phí trong khoảng này.</td></tr>`;
+        return;
+      }
       const byLineItem = new Map();
-      for (const r of costRows) {
+      for (const r of rows) {
         const key = r.line_item || '(khác)';
         const cur = byLineItem.get(key) || { line_item: key, amount: 0 };
         cur.amount += r.amount?.value || 0;
         byLineItem.set(key, cur);
       }
-      const rows = [...byLineItem.values()].sort((a, b) => b.amount - a.amount);
-      costBody.innerHTML = rows.map((r) => `
+      const lineItemRows = [...byLineItem.values()].sort((a, b) => b.amount - a.amount);
+      body.innerHTML = lineItemRows.map((r) => `
         <tr>
           <td>${escapeHtml(r.line_item)}</td>
           <td>${fmtUsd(r.amount)}</td>
@@ -430,16 +456,54 @@
       `).join('');
     }
 
-    const byModel = new Map();
+    function renderModelTable(tbodyId, rows) {
+      const body = document.getElementById(tbodyId);
+      const byModelLocal = new Map();
+      for (const r of rows) {
+        const model = r.model || '(không rõ)';
+        const mCur = byModelLocal.get(model) || { requests: 0, input: 0, output: 0, keyIds: new Set() };
+        mCur.requests += r.num_model_requests || 0;
+        mCur.input += r.input_tokens || 0;
+        mCur.output += r.output_tokens || 0;
+        if (r.api_key_id) mCur.keyIds.add(r.api_key_id);
+        byModelLocal.set(model, mCur);
+      }
+      const localTotalTokens = [...byModelLocal.values()].reduce((s, v) => s + v.input + v.output, 0);
+      const modelRowsLocal = [...byModelLocal.entries()].map(([model, v]) => ({ model, ...v, total: v.input + v.output }))
+        .sort((a, b) => b.total - a.total);
+      const maxTokensLocal = Math.max(1, ...modelRowsLocal.map((r) => r.total));
+      body.innerHTML = modelRowsLocal.length ? modelRowsLocal.map((r) => {
+        const pct = localTotalTokens ? (r.total / localTotalTokens * 100) : 0;
+        const barPct = r.total / maxTokensLocal * 100;
+        const sourceLabel = [...r.keyIds].map(keyLabel).join(', ') || '(không rõ)';
+        return `
+          <tr>
+            <td class="mono">${escapeHtml(r.model)}${MODEL_NOTES[r.model] ? `<div class="muted" style="font-size:11px;margin-top:3px;">${escapeHtml(MODEL_NOTES[r.model])}</div>` : ''}</td>
+            <td>${escapeHtml(sourceLabel)}</td>
+            <td>${fmt(r.requests)}</td>
+            <td>${fmt(r.input)}</td>
+            <td>${fmt(r.output)}</td>
+            <td>${fmt(r.total)}</td>
+            <td>
+              <div class="bar-wrap">
+                <div class="bar-track"><div class="bar-fill" style="width:${barPct}%"></div></div>
+                <span class="muted" style="font-size:12px;min-width:42px;">${pct.toFixed(1)}%</span>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('') : `<tr><td colspan="7" class="muted">Chưa có dữ liệu.</td></tr>`;
+    }
+
+    renderCostTable('costTableBody', costRows, costsError);
+    renderModelTable('modelTableBody', usageRows);
+    if (usage30Rows) renderModelTable('modelTableBody30', usage30Rows);
+    if (costs30Rows) renderCostTable('costTableBody30', costs30Rows, costs30Error);
+
+    const rateMap = buildRateMap(costRows, costsError);
     const byDayWindow = new Map();
     for (const r of usageRows) {
       const model = r.model || '(không rõ)';
-      const mCur = byModel.get(model) || { requests: 0, input: 0, output: 0, keyIds: new Set() };
-      mCur.requests += r.num_model_requests || 0;
-      mCur.input += r.input_tokens || 0;
-      mCur.output += r.output_tokens || 0;
-      if (r.api_key_id) mCur.keyIds.add(r.api_key_id);
-      byModel.set(model, mCur);
 
       // Gom theo khung 2 tieng, tinh theo GIO DIA PHUONG cua trinh duyet (tu
       // start_time UTC cua tung bucket 1h ma server tra ve).
@@ -463,32 +527,6 @@
 
       byDayWindow.set(key, wCur);
     }
-
-    const modelRows = [...byModel.entries()].map(([model, v]) => ({ model, ...v, total: v.input + v.output }))
-      .sort((a, b) => b.total - a.total);
-    const maxModelTokens = Math.max(1, ...modelRows.map((r) => r.total));
-    const modelBody = document.getElementById('modelTableBody');
-    modelBody.innerHTML = modelRows.length ? modelRows.map((r) => {
-      const pct = totalTokens ? (r.total / totalTokens * 100) : 0;
-      const barPct = r.total / maxModelTokens * 100;
-      const sourceLabel = [...r.keyIds].map(keyLabel).join(', ') || '(không rõ)';
-      return `
-        <tr>
-          <td class="mono">${escapeHtml(r.model)}${MODEL_NOTES[r.model] ? `<div class="muted" style="font-size:11px;margin-top:3px;">${escapeHtml(MODEL_NOTES[r.model])}</div>` : ''}</td>
-          <td>${escapeHtml(sourceLabel)}</td>
-          <td>${fmt(r.requests)}</td>
-          <td>${fmt(r.input)}</td>
-          <td>${fmt(r.output)}</td>
-          <td>${fmt(r.total)}</td>
-          <td>
-            <div class="bar-wrap">
-              <div class="bar-track"><div class="bar-fill" style="width:${barPct}%"></div></div>
-              <span class="muted" style="font-size:12px;min-width:42px;">${pct.toFixed(1)}%</span>
-            </div>
-          </td>
-        </tr>
-      `;
-    }).join('') : `<tr><td colspan="7" class="muted">Chưa có dữ liệu.</td></tr>`;
 
     const dayWindowRows = [...byDayWindow.values()]
       .filter((v) => v.requests > 0 || v.tokens > 0)

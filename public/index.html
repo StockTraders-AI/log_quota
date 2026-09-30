@@ -103,13 +103,7 @@
   <div class="sub">Đọc trực tiếp từ Usage/Costs API chính thức của OpenAI (mọi nguồn, mọi project dùng chung tổ chức).</div>
 
   <div class="toolbar">
-    <select id="daysSelect">
-      <option value="1">24 giờ qua</option>
-      <option value="7">7 ngày qua</option>
-      <option value="30" selected>30 ngày qua</option>
-      <option value="90">90 ngày qua</option>
-    </select>
-    <span class="muted" style="font-size:12px;">hoặc chọn 1 ngày:</span>
+    <span class="muted" style="font-size:12px;">Chọn 1 ngày:</span>
     <div class="date-range-picker" id="dateRangePicker">
       <button id="dateRangeBtn" type="button">
         <span>📅</span>
@@ -182,7 +176,6 @@
   const errorEl = document.getElementById('error');
   const loadingEl = document.getElementById('loading');
   const contentEl = document.getElementById('content');
-  const daysSelect = document.getElementById('daysSelect');
   const refreshBtn = document.getElementById('refreshBtn');
   const lastUpdatedEl = document.getElementById('lastUpdated');
 
@@ -351,10 +344,7 @@
   drpClose.addEventListener('click', () => dateRangePanel.classList.remove('open'));
 
   function buildRangeQuery() {
-    if (selectedStart && selectedEnd) {
-      return `start_date=${encodeURIComponent(selectedStart)}&end_date=${encodeURIComponent(selectedEnd)}`;
-    }
-    return `days=${encodeURIComponent(daysSelect.value)}`;
+    return `start_date=${encodeURIComponent(selectedStart)}&end_date=${encodeURIComponent(selectedEnd)}`;
   }
 
   async function load() {
@@ -546,12 +536,6 @@
   }
 
   refreshBtn.addEventListener('click', load);
-  daysSelect.addEventListener('change', () => {
-    selectedStart = null;
-    selectedEnd = null;
-    updateDateRangeLabel();
-    load();
-  });
 
   // Mac dinh mo len la xem dung 1 ngay hom nay (qua lich), khong phai
   // preset 30 ngay.

@@ -38,6 +38,9 @@ loadDotEnv(path.join(__dirname, ".env"));
 const PORT = Number(process.env.PORT || 4600);
 const ADMIN_KEY = (process.env.OPENAI_ADMIN_API_KEY || "").trim();
 const OPENAI_BASE_URL = "https://api.openai.com/v1";
+const CHATBOTGPT_USAGE_URL = (process.env.CHATBOTGPT_USAGE_URL || "").trim().replace(/\/$/, "");
+const CHATBOTGPT_USAGE_SECRET = (process.env.CHATBOTGPT_USAGE_SECRET || "").trim();
+
 function sendJson(res, statusCode, payload) {
   res.statusCode = statusCode;
   res.setHeader("Content-Type", "application/json; charset=utf-8");
@@ -175,6 +178,39 @@ async function handleUsageCosts(req, res, url) {
   }
 }
 
+// chatbotgpt's /public/ai-usage/by-route only takes "days" (relative to
+// now), khong nhan start_date/end_date nhu OpenAI's Usage API - nen luon lay
+// mot cua so du (30 ngay), kem theo "events" (log tung request rieng le, co
+// created_at chinh xac). Frontend tu loc events theo ngay da chon, con
+// by_route dung thang cho bang 30 ngay.
+async function handleChatbotgptUsage(req, res) {
+  if (!CHATBOTGPT_USAGE_URL || !CHATBOTGPT_USAGE_SECRET) {
+    return sendJson(res, 200, {
+      ok: false,
+      configured: false,
+      error: "Chua cau hinh CHATBOTGPT_USAGE_URL / CHATBOTGPT_USAGE_SECRET trong .env",
+    });
+  }
+  try {
+    const target = new URL(`${CHATBOTGPT_USAGE_URL}/public/ai-usage/by-route`);
+    target.searchParams.set("days", "30");
+    const response = await fetch(target, {
+      headers: { "X-Usage-Secret": CHATBOTGPT_USAGE_SECRET },
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return sendJson(res, response.status, {
+        ok: false,
+        configured: true,
+        error: data?.detail || `chatbotgpt tra ve loi HTTP ${response.status}`,
+      });
+    }
+    sendJson(res, 200, { ok: true, configured: true, ...data });
+  } catch (error) {
+    sendJson(res, 502, { ok: false, configured: true, error: error.message });
+  }
+}
+
 const MIME = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -209,6 +245,9 @@ createServer(async (req, res) => {
   }
   if (url.pathname === "/api/usage/costs") {
     return handleUsageCosts(req, res, url);
+  }
+  if (url.pathname === "/api/usage/chatbotgpt") {
+    return handleChatbotgptUsage(req, res);
   }
 
   const served = await serveStatic(req, res, url.pathname);

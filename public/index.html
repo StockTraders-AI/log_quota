@@ -157,6 +157,23 @@
       </table>
     </section>
 
+    <section id="chatbotgptFeatureSection" style="display:none;">
+      <h2>Chi tiết "chatbotgpt" theo tính năng</h2>
+      <table>
+        <thead><tr><th>Tính năng</th><th>Requests</th><th>Prompt tokens</th><th>Completion tokens</th><th>Tổng tokens</th><th>Tỷ trọng</th></tr></thead>
+        <tbody id="chatbotgptFeatureBody"></tbody>
+      </table>
+    </section>
+
+    <section id="chatbotgptFeatureSection30" style="display:none;">
+      <h2>Chi tiết "chatbotgpt" theo tính năng — 30 ngày qua</h2>
+      <table>
+        <thead><tr><th>Tính năng</th><th>Requests</th><th>Prompt tokens</th><th>Completion tokens</th><th>Tổng tokens</th><th>Tỷ trọng</th></tr></thead>
+        <tbody id="chatbotgptFeatureBody30"></tbody>
+      </table>
+    </section>
+    <div id="chatbotgptFeatureNote" class="muted" style="font-size:12px;margin:-16px 0 28px;"></div>
+
     <section>
       <h2>Theo ngày + khung giờ (2 tiếng), theo nguồn</h2>
       <table>
@@ -348,13 +365,14 @@
 
     const query = buildRangeQuery();
     try {
-      const [usage, costs, usage30, costs30] = await Promise.all([
+      const [usage, costs, usage30, costs30, chatbotgpt] = await Promise.all([
         fetchJson(`/api/usage/completions?${query}`),
         fetchJson(`/api/usage/costs?${query}`).catch((e) => ({ rows: [], _error: e.message })),
         fetchJson(`/api/usage/completions?days=30`).catch(() => ({ rows: [] })),
         fetchJson(`/api/usage/costs?days=30`).catch((e) => ({ rows: [], _error: e.message })),
+        fetchJson(`/api/usage/chatbotgpt`).catch((e) => ({ ok: false, error: e.message })),
       ]);
-      render(usage.rows || [], costs.rows || [], costs._error, usage30.rows || [], costs30.rows || [], costs30._error);
+      render(usage.rows || [], costs.rows || [], costs._error, usage30.rows || [], costs30.rows || [], costs30._error, chatbotgpt);
     } catch (err) {
       errorEl.textContent = err.message || String(err);
       errorEl.style.display = 'block';
@@ -363,7 +381,75 @@
     }
   }
 
-  function render(usageRows, costRows, costsError, usage30Rows = [], costs30Rows = [], costs30Error) {
+  function renderChatbotgptFeatures(chatbotgpt) {
+    const section = document.getElementById('chatbotgptFeatureSection');
+    const section30 = document.getElementById('chatbotgptFeatureSection30');
+    const note = document.getElementById('chatbotgptFeatureNote');
+
+    if (!chatbotgpt || chatbotgpt.ok === false) {
+      section.style.display = 'none';
+      section30.style.display = 'none';
+      note.textContent = chatbotgpt && chatbotgpt.error ? `Chưa lấy được chi tiết chatbotgpt theo tính năng: ${chatbotgpt.error}` : '';
+      return;
+    }
+    note.textContent = '';
+    section.style.display = 'block';
+    section30.style.display = 'block';
+
+    function renderFeatureTable(tbodyId, rows) {
+      const body = document.getElementById(tbodyId);
+      if (!rows.length) {
+        body.innerHTML = `<tr><td colspan="6" class="muted">Chưa có dữ liệu.</td></tr>`;
+        return;
+      }
+      const total = rows.reduce((s, r) => s + (r.total_tokens || 0), 0);
+      const max = Math.max(1, ...rows.map((r) => r.total_tokens || 0));
+      const sorted = [...rows].sort((a, b) => (b.total_tokens || 0) - (a.total_tokens || 0));
+      body.innerHTML = sorted.map((r) => {
+        const pct = total ? (r.total_tokens / total * 100) : 0;
+        const barPct = (r.total_tokens || 0) / max * 100;
+        return `
+          <tr>
+            <td class="mono">${escapeHtml(r.route || '(không rõ)')}</td>
+            <td>${fmt(r.request_count)}</td>
+            <td>${fmt(r.prompt_tokens)}</td>
+            <td>${fmt(r.completion_tokens)}</td>
+            <td>${fmt(r.total_tokens)}</td>
+            <td>
+              <div class="bar-wrap">
+                <div class="bar-track"><div class="bar-fill" style="width:${barPct}%"></div></div>
+                <span class="muted" style="font-size:12px;min-width:42px;">${pct.toFixed(1)}%</span>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    // 30 ngay: dung thang by_route chatbotgpt da tong hop san.
+    renderFeatureTable('chatbotgptFeatureBody30', chatbotgpt.by_route || []);
+
+    // Ngay da chon: loc tu "events" (log tung request, created_at la UTC
+    // dang "YYYY-MM-DD HH:MM:SS") theo dung ngay dia phuong nguoi dung dang
+    // xem, roi tu gop lai theo route.
+    const events = chatbotgpt.events || [];
+    const byFeature = new Map();
+    for (const e of events) {
+      const utcDate = new Date(e.created_at.replace(' ', 'T') + 'Z');
+      const localDay = `${utcDate.getFullYear()}-${String(utcDate.getMonth() + 1).padStart(2, '0')}-${String(utcDate.getDate()).padStart(2, '0')}`;
+      if (localDay !== selectedStart) continue;
+      const cur = byFeature.get(e.route) || { route: e.route, request_count: 0, prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+      cur.request_count += 1;
+      cur.prompt_tokens += e.prompt_tokens || 0;
+      cur.completion_tokens += e.completion_tokens || 0;
+      cur.total_tokens += e.total_tokens || 0;
+      byFeature.set(e.route, cur);
+    }
+    renderFeatureTable('chatbotgptFeatureBody', [...byFeature.values()]);
+  }
+
+  function render(usageRows, costRows, costsError, usage30Rows = [], costs30Rows = [], costs30Error, chatbotgpt) {
+    renderChatbotgptFeatures(chatbotgpt);
     contentEl.style.display = 'block';
     lastUpdatedEl.textContent = 'Cập nhật lúc ' + new Date().toLocaleTimeString('vi-VN', { hour12: false });
 
